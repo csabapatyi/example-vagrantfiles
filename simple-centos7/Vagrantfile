@@ -1,0 +1,54 @@
+#     br_management    br_internal  br_external
+PREFIXES=["10.20.20"]
+
+machines = {
+#   Name         CPU, RAM, NETs
+'simple-centos7' => [  1,   1, {1 => "50" }]
+}
+
+$script = <<INLINE
+sudo yum update -y
+sudo yum install -y podman htop vim python3-pip.noarch git
+sudo pip3 install podman-compose
+INLINE
+
+$hosts_file = <<INLINE
+echo "10.20.20.50     simple-centos7.local simple-centos7" >> /etc/hosts
+INLINE
+
+Vagrant.configure("2") do |config|
+  
+  config.vm.box = "centos/7"
+
+  machines.each do |name, (cpu, ram, nets, hdds)|
+
+    hostname = "%s" % [name]
+
+    config.vm.boot_timeout = 600
+    config.vm.define "#{hostname}" do |box|
+      
+      box.vm.hostname = "#{hostname}.docker.local"
+
+      nets.each {|key, suffix|
+        box.vm.network :private_network,
+                  ip: PREFIXES[key-1] + "." + suffix
+      }
+
+      box.vm.provider "vmware_fusion" do |fusion|
+        fusion.vmx["numvcpus"] = cpu
+        fusion.vmx["memsize"]  = ram * 1024
+      end
+
+      box.vm.provider :virtualbox do |vbox|
+        vbox.customize ["modifyvm", :id, "--cpus",   cpu]
+        vbox.customize ["modifyvm", :id, "--memory", ram * 1024]
+        vbox.customize ["modifyvm", :id, "--groups", "/Docker-Swarm"]
+      end
+
+      box.vm.provision :shell, :inline => $script
+      box.vm.provision :shell, :inline => $hosts_file
+
+    end
+  end
+
+end
